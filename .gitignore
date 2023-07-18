@@ -176,7 +176,6 @@ pyrightconfig.json
 loader/tmp_files
 flagged/*
 
+chatglm-6b/
 
-chatglm-6b/*
-
-text2vec-large-chinese/*
+text2vec-large-chinese/
