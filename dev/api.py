@@ -13,6 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing_extensions import Annotated
 from starlette.responses import RedirectResponse
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from chains.local_doc_qa import LocalDocQA
 from configs.model_config import (KB_ROOT_PATH, EMBEDDING_DEVICE,
@@ -38,44 +40,68 @@ nltk.data.path = [NLTK_DATA_PATH] + nltk.data.path
 
 # 启动模型和fastapi
 
-global app
-global local_doc_qa
+# global app
 app = FastAPI()
+local_doc_qa = None
+# global local_doc_qa
 
-parser.add_argument("--host", type=str, default="0.0.0.0")
-parser.add_argument("--port", type=int, default=7860)
-parser.add_argument("--reload",type=bool,default=True)
-# parser.add_argument("--timeout-keep-alive",type=int,default=5000)
-# # 初始化消息
-args = None
-args = parser.parse_args()
-args_dict = vars(args)
-shared.loaderCheckPoint = LoaderCheckPoint(args_dict)
+def setup_app():
+    global app
+    global local_doc_qa
 
-llm_model_ins = shared.loaderLLM()
-llm_model_ins.set_history_len(LLM_HISTORY_LEN)
+    args = None
+    args = parser.parse_args()
+    args_dict = vars(args)
+    shared.loaderCheckPoint = LoaderCheckPoint(args_dict)
+    if local_doc_qa is None:
+        llm_model_ins = shared.loaderLLM()
+        llm_model_ins.set_history_len(LLM_HISTORY_LEN)
 
-# # app = FastAPI()
-# # Add CORS middleware to allow all origins
-# # 在config.py中设置OPEN_DOMAIN=True，允许跨域
-# set OPEN_DOMAIN=True in config.py to allow cross-domain
-if OPEN_CROSS_DOMAIN:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+        local_doc_qa = LocalDocQA()
+        local_doc_qa.init_cfg(
+            llm_model=llm_model_ins,
+            embedding_model=EMBEDDING_MODEL,
+            embedding_device=EMBEDDING_DEVICE,
+            top_k=VECTOR_SEARCH_TOP_K,
+        )
+
+setup_app()
+
+# # parser.add_argument("--host", type=str, default="0.0.0.0")
+# # parser.add_argument("--port", type=int, default=7860)
+# # parser.add_argument("--reload",type=bool,default=True)
+# # parser.add_argument("--timeout-keep-alive",type=int,default=5000)
+# # # 初始化消息
+# args = None
+# args = parser.parse_args()
+# args_dict = vars(args)
+# shared.loaderCheckPoint = LoaderCheckPoint(args_dict)
+
+# llm_model_ins = shared.loaderLLM()
+# llm_model_ins.set_history_len(LLM_HISTORY_LEN)
+
+# # # app = FastAPI()
+# # # Add CORS middleware to allow all origins
+# # # 在config.py中设置OPEN_DOMAIN=True，允许跨域
+# # set OPEN_DOMAIN=True in config.py to allow cross-domain
+# if OPEN_CROSS_DOMAIN:
+#     app.add_middleware(
+#         CORSMiddleware,
+#         allow_origins=["*"],
+#         allow_credentials=True,
+#         allow_methods=["*"],
+#         allow_headers=["*"],
+#     )
 
 
-local_doc_qa = LocalDocQA()
-local_doc_qa.init_cfg(
-    llm_model=llm_model_ins,
-    embedding_model=EMBEDDING_MODEL,
-    embedding_device=EMBEDDING_DEVICE,
-    top_k=VECTOR_SEARCH_TOP_K,
-)
+# local_doc_qa = LocalDocQA()
+# local_doc_qa.init_cfg(
+#     llm_model=llm_model_ins,
+#     # llm_model=shared.loaderLLM(),
+#     embedding_model=EMBEDDING_MODEL,
+#     embedding_device=EMBEDDING_DEVICE,
+#     top_k=VECTOR_SEARCH_TOP_K,
+# )
 
 
 # response model
@@ -237,6 +263,7 @@ async def upload_file(
         file: UploadFile = File(description="A single binary file"),
         knowledge_base_id: str = Form(..., description="Knowledge Base Name", example="kb1"),
 ):
+    global local_doc_qa
     saved_path = get_folder_path(knowledge_base_id)
     if not os.path.exists(saved_path):
         os.makedirs(saved_path)
@@ -743,6 +770,7 @@ async def ask_resume(
 # app = FastAPI()
 
 def api_start(host, port, **kwargs):
+    
     # global app
     # global local_doc_qa
 
@@ -786,13 +814,16 @@ def api_start(host, port, **kwargs):
     #     embedding_device=EMBEDDING_DEVICE,
     #     top_k=VECTOR_SEARCH_TOP_K,
     # )
+
+    # setup_app()
     # development stage
     if kwargs.get("reload"):
-        uvicorn.run("api:app", host=host, port=port, reload=kwargs.get("reload"))
+        uvicorn.run("api:app", host=host, port=port, reload=kwargs.get("reload"),workers=1)
     # production stage
     else:
         uvicorn.run(app, host=host, port=port)
-
+    
+    # uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":
@@ -809,5 +840,5 @@ if __name__ == "__main__":
     # api_start(args.host, args.port, reload=args.reload)
     
 
-    uvicorn.run("api:app", host=args.host, port=args.port, reload=args.reload)
-    # uvicorn.run("api:app", host="0.0.0.0", port=7860, reload=True,timeout_keep_alive=5000 )    
+    # uvicorn.run("api:app", host=args.host, port=args.port, reload=args.reload)
+    uvicorn.run("api:app", host="0.0.0.0", port=7860, reload=False,reload_dirs=["./dev", "./chains"] )    
