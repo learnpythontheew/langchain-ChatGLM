@@ -18,8 +18,9 @@ from agent import bing_search
 from langchain.docstore.document import Document
 from functools import lru_cache
 from textsplitter.zh_title_enhance import zh_title_enhance
-
-
+from langchain.output_parsers import ResponseSchema
+from langchain.prompts import PromptTemplate, ChatPromptTemplate, HumanMessagePromptTemplate
+from langchain.output_parsers import StructuredOutputParser
 # patch HuggingFaceEmbeddings to make it hashable
 def _embeddings_hash(self):
     return hash(self.model_name)
@@ -99,13 +100,23 @@ def write_check_file(filepath, docs):
             fout.write('\n')
         fout.close()
 
+# original generate_prompt
+# def generate_prompt(related_docs: List[str],
+#                     query: str,
+#                     prompt_template: str = PROMPT_TEMPLATE, ) -> str:
+#     context = "\n".join([doc.page_content for doc in related_docs])
+#     prompt = prompt_template.replace("{question}", query).replace("{context}", context)
+#     return prompt
+
+# new generate_prompt
 
 def generate_prompt(related_docs: List[str],
                     query: str,
-                    prompt_template: str = PROMPT_TEMPLATE, ) -> str:
+                    prompt_template: str ) -> str:
     context = "\n".join([doc.page_content for doc in related_docs])
     prompt = prompt_template.replace("{question}", query).replace("{context}", context)
     return prompt
+
 
 
 def search_result2docs(search_results):
@@ -231,7 +242,7 @@ class LocalDocQA:
         related_docs_with_score = vector_store.similarity_search_with_score(query, k=self.top_k)
         torch_gc()
         if len(related_docs_with_score) > 0:
-            prompt = generate_prompt(related_docs_with_score, query)
+            prompt = generate_prompt(related_docs_with_score, query,PROMPT_TEMPLATE)
         else:
             prompt = query
 
@@ -244,6 +255,92 @@ class LocalDocQA:
                         "result": resp,
                         "source_documents": related_docs_with_score}
             yield response, history
+
+
+    # def generate_json_prompt(response_schemas):
+
+    # generate_prompt()
+
+    # outputparser = StructuredOutputParser.from_response_schemas(response_schemas)
+    # format_instructions = outputparser.get_format_instructions()
+
+
+    # prompt = ChatPromptTemplate.from_template(template=template)
+    # resume_extration_template="""
+    #     extract info in format:
+
+    #     {format_instructions}
+
+    #     """
+
+    # prompt = ChatPromptTemplate.from_template(template=resume_extration_template)
+
+    # return prompt
+
+
+    def get_json_output_local_file_based_answer(self,response_schemas,query, vs_path, chat_history=[], streaming: bool = STREAMING):
+        vector_store = load_vector_store(vs_path, self.embeddings)
+        vector_store.chunk_size = self.chunk_size
+        vector_store.chunk_conent = self.chunk_conent
+        vector_store.score_threshold = self.score_threshold
+        related_docs_with_score = vector_store.similarity_search_with_score(query, k=self.top_k)
+        torch_gc()
+
+
+        
+        if len(related_docs_with_score) > 0:
+
+            prompt_= generate_prompt(related_docs=related_docs_with_score,prompt_template=JSON_OUTPUT_PROMPT_TEMPLATE)
+
+            outputparser = StructuredOutputParser.from_response_schemas(response_schemas)
+            format_instructions = outputparser.get_format_instructions()
+            logging.info("format_instructions:/n")
+            logging.info(format_instructions)
+            prompt=prompt_.replace("{schema}", format_instructions)
+            logging.info(prompt)
+            logging.info(type(prompt))
+            
+            # json_convert_template="""
+            # {context}
+            # {format_instructions}
+            # """
+            # json_convert_prompt = ChatPromptTemplate.from_template(template=json_convert_template)
+
+            # logging.info('json_convert_prompt:/n')
+            # logging.info(json_convert_prompt)
+            # prompt:list = json_convert_prompt.format_messages(context=context, 
+            #                     format_instructions=format_instructions)
+
+        else:
+            prompt = query
+
+            print('not generating prompt!!!!!!')
+
+        # prompt=generate_resume_prompt()
+
+        for answer_result in self.llm.generatorAnswer(prompt=prompt, history=chat_history,
+                                                      streaming=streaming):
+            resp = answer_result.llm_output["answer"]
+            # logging.info('llmresp:/n')
+            # logging.info(resp)
+            # logging.info('**************************')
+            # logging.info(type(resp))
+
+            # output=outputparser.parse(resp)
+
+            # logging.info('output:/n')
+            # logging.info(output)
+            # logging.info(type(output))
+
+            history = answer_result.history
+            history[-1][0] = query
+            response = {"query": query,
+                        "result": resp,
+                        "source_documents": related_docs_with_score}
+            yield response, history
+
+
+
 
     # query      查询内容
     # vs_path    知识库路径

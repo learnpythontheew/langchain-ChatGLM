@@ -91,11 +91,11 @@ sudo systemctl restart docker
 ```
 安装完成后，可以使用以下命令编译镜像和启动容器：
 ```
-docker build -f Dockerfile-cuda -t chatglm-cuda:latest .
-docker run --gpus all -d --name chatglm -p 7860:7860  chatglm-cuda:latest
+docker build -f Dockerfile-cuda -t chatglm-cuda:v0.1.16 .
+docker run --gpus all -d --name chatglm -p 7860:7860  chatglm-cuda:v0.1.16
 
 #若要使用离线模型，请配置好模型路径，然后此repo挂载到Container
-docker run --gpus all -d --name chatglm -p 7860:7860 -v ~/github/langchain-ChatGLM:/chatGLM  chatglm-cuda:latest
+docker run --gpus all -itd --name chatglmdev -p 7860:7860 -v ~/langchain-ChatGLM:/chatGLM  chatglm-cuda:v0.1.16
 ```
 
 

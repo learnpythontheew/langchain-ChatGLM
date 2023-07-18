@@ -175,3 +175,8 @@ embedding/*
 pyrightconfig.json
 loader/tmp_files
 flagged/*
+
+
+chatglm-6b/*
+
+text2vec-large-chinese/*
